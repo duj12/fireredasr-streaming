@@ -22,7 +22,7 @@ def load_model(model_dir):
     model.eval()
 
     dict_path = os.path.join(model_dir, "dict.txt")
-    spm_model = os.path.join(model_dir, "train_bpe1000. model")
+    spm_model = os.path.join(model_dir, "train_bpe1000.model")
     tokenizer = ChineseCharEnglishSpmTokenizer(dict_path, spm_model)
 
     return feat_extractor, model, tokenizer
@@ -70,7 +70,7 @@ class FireRedAsrStreaming:
             args.get("beam_size", 1),
             args.get("nbest", 1),
             args.get("decode_max_len", 0),
-            args.get("softmax smoothing", 1.0),
+            args.get("softmax_smoothing", 1.0),
             args.get("aed_length_penalty", 0.0),
             args.get("eos_penalty", 1.0),
             None if full_update else self.ys_state,
