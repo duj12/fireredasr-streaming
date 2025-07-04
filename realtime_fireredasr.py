@@ -60,7 +60,7 @@ class RealtimeSpeechRecognizer:
                 if cur_ts >= self.next_transcribe_time:
                     text, cost = self.transcribe()
                     results.append(self.gen_result("changed", text, cost))
-                    self.next_transcribe_time = cur_ts + self.transcribe_inter
+                    self.next_transcribe_time = cur_ts + self.transcribe_interval
             self.speech_state = is_speech
             self.sample_count += len(frame_np)
         return results
