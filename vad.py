@@ -32,22 +32,22 @@ class SileroVADModel:
         return np.zeros((2, batch_size, 128), dtype=np.float32)
 
 
-def __call__(self, x, state, sr: int):
-    if len(x.shape) == 1:
-        x = np.expand_dims(x, 0)
-    if len(x.shape) > 2:
-        raise ValueError(
-            f"Too many dimensions for input audio chunk {len(x.shape)}"
-        )
-    if sr/x.shape[1] > 31.25:
-        raise ValueError("Input audio chunk is too short")
-
-    ort_inputs = {
-        "input": x,
-        "state": state,
-        "sr": np.array(sr, dtype="int64"),
-    }
-
-    out, state = self.session.run(None, ort_inputs)
-
-    return out, state
+    def __call__(self, x, state, sr: int):
+        if len(x.shape) == 1:
+            x = np.expand_dims(x, 0)
+        if len(x.shape) > 2:
+            raise ValueError(
+                f"Too many dimensions for input audio chunk {len(x.shape)}"
+            )
+        if sr/x.shape[1] > 31.25:
+            raise ValueError("Input audio chunk is too short")
+    
+        ort_inputs = {
+            "input": x,
+            "state": state,
+            "sr": np.array(sr, dtype="int64"),
+        }
+    
+        out, state = self.session.run(None, ort_inputs)
+    
+        return out, state
