@@ -11,34 +11,14 @@ class ASRFeatExtractor:
     def __init__(self, kaldi_cmvn_file):
         self.cmvn = CMVN(kaldi_cmvn_file) if kaldi_cmvn_file != "" else None
         self.fbank = KaldifeatFbank(num_mel_bins=80, frame_length=25,
-            frame_shift=10, dither=0.0)
+                                    frame_shift=10, dither=0.0)
 
-    def __call__(self, wav_paths):
-        feats = []
-        durs = []
-        for wav_path in wav_paths:
-            sample_rate, wav_np = kaldiio.load_mat(wav_path)
-            dur = wav_np.shape[0] / sample_rate
-            fbank = self.fbank((sample_rate, wav_np))
-            if self.cmvn is not None:
-                fbank = self.cmvn(fbank)
-            fbank = torch.from_numpy(fbank).float()
-            feats.append(fbank)
-            durs.append(dur)
-        lengths = torch.tensor([feat.size(0) for feat in feats]).long()
-        feats_pad = self.pad_feat(feats, 0.0)
-        return feats_pad, lengths, durs
-
-    def pad_feat(self, xs, pad_value):
-        # type: (List[Tensor], int) -> Tensor
-        n_batch = len(xs)
-        max_len = max([xs[i].size(0) for i in range(n_batch)])
-        pad = torch.ones(n_batch, max_len, *xs[0].size()[1:]).to(xs[0].device).to(xs[0].dtype).fill_(pad_value)
-        for i in range(n_batch):
-            pad[i, :xs[i].size(0)] = xs[i]
-        return pad
-
-
+    def __call__(self, sample_rate, wav_np):
+        fbank = self.fbank((sample_rate, wav_np))
+        if self.cmvn is not None:
+            fbank = self.cmvn(fbank)
+        fbank = torch.from_numpy(fbank).float()
+        return fbank
 
 
 class CMVN:
@@ -71,7 +51,6 @@ class CMVN:
             istd = 1.0 / math.sqrt(varience)
             inverse_std_variences.append(istd)
         return dim, np.array(means), np.array(inverse_std_variences)
-
 
 
 class KaldifeatFbank:
