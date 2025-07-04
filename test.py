@@ -16,12 +16,22 @@ def open_stream(filename=None):
     return stream
 
 
+# read wav from file
 filename = "examples/wav/BAC009S0764W0121.wav"
+
+# capture wav from microphone
 # filename = None
 
-model_dir = "pretrained models"
-asr = RealtimeSpeechRecognizer()
+# create realtime speech recognizer instance
+asr = RealtimeSpeechRecognizer(
+    model_dir="pretrained_models",  # models' dir
+    use_gpu=False,  # use gpu or not
+    sample_rate=16000,  # audio sample rate
+    silence_duration_s=0.4,  # silence duration for VAD cutting
+    transcribe_interval=1.0,  # how many seconds to transcribe once
+)
 
+# recognization loop
 stream = open_stream(filename)
 while True:
     data = stream.read(1600)
