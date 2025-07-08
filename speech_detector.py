@@ -36,7 +36,7 @@ class SpeechDetector:
         while len(self.audio_buffer) >= samples:
             audio = self.audio_buffer[:samples]
             speech_prob, self.state = self.model(
-                audio, self.state, self.framerate)
+                audio / 32768.0, self.state, self.framerate)
             speech_threshold = neg_threshold if self.is_speech else self.threshold
             if speech_prob > speech_threshold:
                 self.silence_last_s = 0
