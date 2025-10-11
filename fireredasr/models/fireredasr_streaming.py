@@ -40,6 +40,8 @@ class FireRedAsrStreaming:
         feat_extractor, model, tokenizer = load_model(model_dir)
         self.feat_extractor = feat_extractor
         self.model = model
+        if use_gpu:
+            self.model = model.cuda()
         self.tokenizer = tokenizer
         self.ys_state = None
         self.wav_buffer = np.empty(0)
@@ -61,9 +63,6 @@ class FireRedAsrStreaming:
         lengths = torch.tensor([feat.size(0)]).long()
         if self.use_gpu:
             feats, lengths = feats.cuda(), lengths.cuda()
-            self.model.cuda()
-        else:
-            self.model.cpu()
 
         hyps = self.model.transcribe(
             feats, lengths,
