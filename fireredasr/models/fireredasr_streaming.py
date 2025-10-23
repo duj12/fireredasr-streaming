@@ -43,22 +43,10 @@ class FireRedAsrStreaming:
         if use_gpu:
             self.model = model.cuda()
         self.tokenizer = tokenizer
-        self.ys_state = None
-        self.wav_buffer = np.empty(0)
-
-    def input(self, streaming_wav_np):
-        self.wav_buffer = np.concatenate((self.wav_buffer, streaming_wav_np))
-
-    def get_input_length(self):
-        return len(self. wav_buffer)
-
-    def clear_state(self):
-        self.ys_state = None
-        self.wav_buffer = np.empty(0)
 
     @torch.no_grad()
-    def transcribe(self, full_update=False, args={}):
-        feat = self.feat_extractor(self.sample_rate, self.wav_buffer)
+    def transcribe(self, wav_buffer, asr_state, full_update=False, args={}):
+        feat = self.feat_extractor(self.sample_rate, wav_buffer)
         feats = feat.unsqueeze(0)
         lengths = torch.tensor([feat.size(0)]).long()
         if self.use_gpu:
@@ -72,7 +60,7 @@ class FireRedAsrStreaming:
             args.get("softmax_smoothing", 1.0),
             args.get("aed_length_penalty", 0.0),
             args.get("eos_penalty", 1.0),
-            None if full_update else self.ys_state,
+            None if full_update else asr_state,
         )
 
         hyp = hyps[0][0]
@@ -81,6 +69,6 @@ class FireRedAsrStreaming:
         text = self.tokenizer.detokenize(hyp_ids)
 
         if len(ys) > self.least_ys_state_len:
-            self.ys_state = ys[:-1] if len(ys) > 0 else ys
+            asr_state = ys[:-1] if len(ys) > 0 else ys
 
-        return text
+        return text, asr_state

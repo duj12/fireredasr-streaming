@@ -1,66 +1,108 @@
+import asyncio
+import uuid
+import time
+import numpy as np
+from typing import Dict, Any
 from speech_detector import SpeechDetector
 from fireredasr.models.fireredasr_streaming import FireRedAsrStreaming
-import numpy as np
-import time
 
 
-class RealtimeSpeechRecognizer:
+class AsyncRealtimeSpeechRecognizer:
     def __init__(
         self,
         model_dir="pretrained_models",
-        use_gpu=False,
+        use_gpu=True,
         sample_rate=16000,
         silence_duration_s=0.4,
         transcribe_interval=1.0,
     ):
-        self.model = FireRedAsrStreaming(model_dir,
-                                         use_gpu=use_gpu,
-                                         sample_rate=sample_rate)
-        self.detector = SpeechDetector(model_dir,
-                                       framerate=sample_rate,
-                                       silence_duration_s=silence_duration_s)
+        # 共享模型
+        self.shared_model = FireRedAsrStreaming(
+            model_dir, use_gpu=use_gpu, sample_rate=sample_rate
+        )
         self.sample_rate = sample_rate
+        self.silence_duration_s = silence_duration_s
         self.transcribe_interval = transcribe_interval
-        self.sentence_id = 0
-        self.speech_state = False
-        self.sample_count = 0
-        self.next_transcribe_time = 0.0
 
-    def gen_result(self, t, text=None, latency=0.0):
+        # 每个session独立缓存
+        self.sessions: Dict[str, Dict[str, Any]] = {}
+
+        # 模型锁，确保同一时间只有一个线程调用 shared_model.transcribe()
+        self.model_lock = asyncio.Lock()
+
+    def create_session(self):
+        """为每个并发请求创建独立状态"""
+        sid = str(uuid.uuid4())
+        self.sessions[sid] = {
+            "detector": SpeechDetector(
+                framerate=self.sample_rate,
+                silence_duration_s=self.silence_duration_s,
+            ),
+            "speech_state": False,
+            "audio_buffer": np.empty(0),
+            "asr_state": None,   # asr临时状态  
+            "sample_count": 0,
+            "next_transcribe_time": 0.0,
+            "sentence_id": 0,
+        }
+        return sid
+
+    def gen_result(self, sid, t, text=None, latency=0.0):
+        s = self.sessions[sid]
         return {
             "type": t,
-            "id": self.sentence_id,
-
+            "id": s["sentence_id"],
             "text": text,
-            "ts": self.sample_count/self.sample_rate,
+            "ts": s["sample_count"] / self.sample_rate,
             "latency": latency,
+            "session": sid,
         }
 
-    def transcribe(self):
-        start_time = time.time()
-        text = self.model.transcribe()
-        return text, time.time() - start_time
-
-    def recognize(self, audio_bytes):
+    async def recognize(self, sid: str, audio_bytes: bytes):
+        """异步处理单个session的音频流"""
+        s = self.sessions[sid]
         results = []
+
         wav_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32)
-        for frame_np, is_speech in self.detector.detect(wav_np):
+        for frame_np, is_speech in s["detector"].detect(wav_np):
             if is_speech:
-                self.model.input(frame_np)
-            if is_speech and not self.speech_state:
-                results.append(self.gen_result("begin"))
-                self.next_transcribe_time = self.transcribe_interval
-            elif self.speech_state and not is_speech:
-                text, cost = self.transcribe()
-                results.append(self.gen_result("end", text, cost))
-                self.model.clear_state()
-                self.sentence_id += 1
-            elif self.speech_state:
-                cur_ts = self.model.get_input_length() / self.sample_rate
-                if cur_ts >= self.next_transcribe_time:
-                    text, cost = self.transcribe()
-                    results.append(self.gen_result("changed", text, cost))
-                    self.next_transcribe_time = cur_ts + self.transcribe_interval
-            self.speech_state = is_speech
-            self.sample_count += len(frame_np)
-        return results
+                s["audio_buffer"] = np.concatenate((s["audio_buffer"], frame_np))
+
+            if is_speech and not s["speech_state"]:
+                results.append(self.gen_result(sid, "begin"))
+                s["next_transcribe_time"] = self.transcribe_interval
+
+            elif s["speech_state"] and not is_speech:
+                # 检测到一句结束
+                text, cost = await self.transcribe_from_model(sid)
+                results.append(self.gen_result(sid, "end", text, cost))
+                self.clear_session_buffer(sid)
+
+            elif s["speech_state"]:
+                cur_ts = len(s["audio_buffer"]) / self.sample_rate
+                if cur_ts >= s["next_transcribe_time"]:
+                    text, cost = await self.transcribe_from_model(sid)
+                    results.append(self.gen_result(sid, "changed", text, cost))
+                    s["next_transcribe_time"] = cur_ts + self.transcribe_interval
+
+            s["speech_state"] = is_speech
+            s["sample_count"] += len(frame_np)
+
+        return results       
+
+    async def transcribe_from_model(self, sid):
+        """线程安全的转录调用"""
+        async with self.model_lock:
+            start_time = time.time()
+            text, asr_state = self.shared_model.transcribe(self.sessions[sid]["audio_buffer"], self.sessions[sid]["asr_state"])
+            self.sessions[sid]["asr_state"] = asr_state  # 更新asr状态
+            latency = time.time() - start_time
+        return text, latency
+
+    def clear_session_buffer(self, sid):
+        """清空单个session缓存"""
+        s = self.sessions[sid]
+        s["audio_buffer"] = np.empty(0)
+        s['asr_state'] = None
+        s["sentence_id"] += 1
+
